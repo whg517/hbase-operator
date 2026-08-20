@@ -289,7 +289,7 @@ chart-e2e: setup-chainsaw-cluster chainsaw docker-build helm-chart-package ## Ru
 	@echo "Installing hbase-operator chart..."
 	"$(HELM)" upgrade --install --create-namespace --namespace hbase-operator --kubeconfig $(CHAINSAW_KUBECONFIG) --wait hbase-operator ./target/charts/$(PROJECT_NAME)-$(VERSION).tgz
 	@echo "Running chainsaw e2e tests..."
-	KUBECONFIG=$(CHAINSAW_KUBECONFIG) $(CHAINSAW) test --config ./test/e2e/.chainsaw.yaml --test-dir ./test/e2e/
+	KUBECONFIG=$(CHAINSAW_KUBECONFIG) $(CHAINSAW) test --config ./test/e2e/.chainsaw.yaml --test-dir ./test/e2e/ --set product_version=$(PRODUCT_VERSION)
 
 .PHONY: helm-chart-publish ## Publish helm chart for the operator.
 helm-chart-publish: helm-chart-package ## Publish helm chart for the operator.
@@ -349,7 +349,7 @@ setup-chainsaw-e2e: chainsaw docker-build ## Run the chainsaw setup
 
 .PHONY: chainsaw-e2e
 chainsaw-e2e: ## Run the chainsaw e2e tests
-	KUBECONFIG=$(CHAINSAW_KUBECONFIG) $(CHAINSAW) test --config ./test/e2e/.chainsaw.yaml --test-dir ./test/e2e/
+	KUBECONFIG=$(CHAINSAW_KUBECONFIG) $(CHAINSAW) test --config ./test/e2e/.chainsaw.yaml --test-dir ./test/e2e/ --set product_version=$(PRODUCT_VERSION)
 
 .PHONY: cleanup-chainsaw-e2e
 cleanup-chainsaw-e2e: ## Run the chainsaw cleanup
