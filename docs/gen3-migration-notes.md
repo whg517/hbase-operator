@@ -2,10 +2,13 @@
 
 本次重构将 hbase-operator 从 Gen 2b（operator-go v0.12.6 `BaseCluster` + 每角色子包）迁移到
 Gen 3（**operator-go v0.13.0**：`GenericReconciler` + `RoleProvider`/`RoleGroupResolver` + `BaseRoleGroupHandler` + per-CR `ExtensionRegistry`）。
-方法论：YAML 平价优先 —— e2e（`test/e2e/`，未改动）是行为契约；渲染资源与迁移前一致，
-显式列外的差异见下文 intentional-diff 清单。
+方法论：YAML 平价优先 —— 既有 e2e（`test/e2e/`）是行为契约；同时补入 Gen 3 生命周期、
+外部依赖 watch、状态与 Vector 的回归断言。渲染资源与迁移前一致，显式列外的差异见下文
+intentional-diff 清单。
 
 ## 架构映射
+
+<!-- markdownlint-disable MD013 -->
 
 | 迁移前（Gen 2b） | 迁移后（Gen 3） |
 |---|---|
@@ -19,6 +22,9 @@ Gen 3（**operator-go v0.13.0**：`GenericReconciler` + `RoleProvider`/`RoleGrou
 | 旧代码内的镜像默认值 | CR `GetSpec()` 镜像适配器（repo/productVersion/kubedoopVersion 默认值不变） |
 | 每 role group 日志渲染 | `RoleDeclaration.LogProducers`（log4j，`log4j.properties`，console pattern 不变） |
 | （无） | 角色级 PDB 由框架从 `roleConfig.podDisruptionBudget` 构建（与 pdb e2e 断言一致：`hbase-<role>`） |
+| 外部对象靠周期性 reconcile 间接刷新 | controller-runtime 字段索引 + `SetupWithManagerOptions.Watches`：被引用的 ZooKeeper/HDFS/Vector ConfigMap、OIDC Secret 和 cluster-scoped AuthenticationClass 变化会直接 enqueue 对应 HbaseCluster |
+
+<!-- markdownlint-enable MD013 -->
 
 ## Intentional-diff 清单（渲染资源与迁移前的已知差异）
 
@@ -46,7 +52,8 @@ Gen 3（**operator-go v0.13.0**：`GenericReconciler` + `RoleProvider`/`RoleGrou
    关掉探针 —— 代价是失去"代理挂了把 Pod 移出 Service"的保护。
 4. **Vector agent 门控**：旧行为是 `vectorAggregatorConfigMapName` 非空即注入 vector 容器；
    新行为遵循框架三重门（`logging.enableVectorAgent` + 声明的 producer + vector.yaml 来源）。
-   滚动日志文件名 `hbase.log4j.xml` → `<role>.log4j.xml`（框架约定）。无 e2e 覆盖。
+   滚动日志文件名 `hbase.log4j.xml` → `<role>.log4j.xml`（框架约定）。observability e2e 会启动
+   master 的 native Vector sidecar，核验生成的 `vector.yaml`、log4j 文件目标、二进制与 9598 metrics。
 5. **ServiceAccount**：pods 由 default SA 改为框架**派生**的 `hbasecluster-<cluster>`
    （`reconciler.ServiceAccountResourceName(kind, cluster)`，超长时带 sha256 后缀）。
    operator-go #616 移除了 `ServiceAccountName`/`ServiceAccountNameFunc`：名字不再可配置，因为框架
@@ -58,11 +65,16 @@ Gen 3（**operator-go v0.13.0**：`GenericReconciler` + `RoleProvider`/`RoleGrou
 7. **hbase-site.xml / ssl-*.xml 由 XML adapter 渲染**：键值不变（用户 `configOverrides` 仍最高优先），
    XML 排版可能与旧 `xml.XMLConfiguration` 输出有格式差异。
 8. **容器 env 顺序**：env 改经 envOverrides 合并管道（排序输出），值不变。
-9. **SecurityContext**：框架默认注入 1001/0/1001 + 硬化集；与 v0.12.6 builder 默认的差异待
-   kind 集群验证（HDFS 数据属主问题重点观察）。
+9. **SecurityContext**：框架默认注入 1001/0/1001 + 硬化集；Kind 上的全量 Chainsaw 已通过
+   HBase 实际启动验证，未观察到 HDFS 数据属主问题。
 10. **状态子资源**：`status` 增加 `roleGroups` 账本与 `observedGeneration`；conditions 语义改为框架
-    五条件（Available/Progressing/Degraded/ServiceHealthy/ReconcileComplete）。
+    条件集（Available/Progressing/Degraded/Paused/ServiceHealthy/ReconcileComplete 等）。
 11. **kerberos discovery config**（`GetDiscoveryConfig`）在旧代码中未被引用，未迁移。
+12. **修正 metrics Service 路由**：三个角色仍暴露 HBase 原生 UI/Prometheus 端口
+    16010/16030/8085，但 `targetPort` 统一指向实际存在的 `ui-http`，不再误指 master 中不存在、
+    另两角色中为 9100 的 `metrics` 端口。
+13. **修正 HBase 角色 JVM 变量**：`HBASE_<ROLE>_OPTS` 使用 HBase 实际识别的大写角色名
+    (`HBASE_MASTER_OPTS` / `HBASE_REGIONSERVER_OPTS` / `HBASE_RESTSERVER_OPTS`)。
 
 ## 验证状态
 
@@ -75,24 +87,31 @@ Gen 3（**operator-go v0.13.0**：`GenericReconciler` + `RoleProvider`/`RoleGrou
 - [x] **渲染平价单测** `internal/controller/handler_test.go`：入口脚本（三角色 subcommand、config 拷贝、
       信号处理）、探针端口、config/hdfs-config 卷、默认亲和、metrics Service 逐字段、Kerberos
       （ssl-*.xml、hbase-site 键、CSI 卷注解）、OIDC sidecar（upstream 端口、cookie 引用而非内联）
-- [x] 代码量：`internal/` 3384 → 1215 行（-64%）
-- [ ] chainsaw 全量（default/kerberos/oidc/pdb/observability）—— 进行中
+- [x] **产品级 GenericReconciler 集成测试**：可选角色；Vector 成功链与缺失 aggregator 的 fail-close；
+      pause 不改资源、unpause 恢复漂移修复、stop 缩到 0、resume 恢复副本；status roleGroups/conditions
+- [x] **外部依赖 watch 单测**：ConfigMap/Secret 按 namespace 映射，AuthenticationClass 跨 namespace
+      映射；重复/空引用去重
+- [x] 生产 Go 代码量：`internal/` 3384 → 1372 行（-59%；包含新增的外部依赖 watch）
+- [x] chainsaw 全量（default/kerberos/oidc/pdb/observability）—— Kind Kubernetes 1.35.0 上
+      HBase 2.6.1 与 2.6.2 均通过；observability 同时验证 Vector 0.47.0、三角色原生 metrics 与
+      Prometheus targets，且 Prometheus release/RBAC 按测试 namespace 隔离并显式清理
 - [x] go.mod 固定到正式发布版 **operator-go v0.13.0**（不再是本地 replace 或 pseudo-version）
 
-## 迁移中发现的既有缺陷（**本次未修，保持字节平价**）
+## 迁移中发现并在本轮修复的既有缺陷
 
-1. **master 的 metrics Service 指向不存在的命名端口**：Service 的 `targetPort: metrics`，但 master 角色
+1. **metrics Service 曾指向错误命名端口**：Service 的 `targetPort: metrics`，但 master 角色
    的容器端口只有 `master`(16000) 和 `ui-http`(16010)，没有名为 `metrics` 的端口 → 该 Service 无法路由。
    regionserver/restserver 虽有 `metrics`(9100) 端口，但 Service 声明 `port: 16030/8085 → targetPort:
-   metrics(9100)`，与注解里 `prometheus.io/port: 16030/8085` 自相矛盾。因为 observability e2e 逐字段断言
-   了这个形状，本次原样保留。实际抓取靠 pod 注解直采，所以未暴露。修复需同步改 e2e 断言，应作为独立 issue。
-2. **旧默认反亲和从未生效**：旧代码用 `app.kubernetes.io/name: hbase` 做 matchLabels，但旧 pod 实际带的是
+   metrics(9100)`，与注解自相矛盾。本轮已改为 `targetPort: ui-http`，并同步 unit/Chainsaw 断言。
+2. **`HBASE_<role>_OPTS` 曾使用小写角色名**（如 `HBASE_master_OPTS`），HBase 不读取该变量。
+   本轮改为大写角色名，并由 Kerberos e2e 同时断言大写变量存在、小写变量不存在。
+
+## 仍需注意的既有行为
+
+1. **旧默认反亲和从未生效**：旧代码用 `app.kubernetes.io/name: hbase` 做 matchLabels，但旧 pod 实际带的是
    `name: hbasecluster`（由 GVK Kind 小写推导），选择器永不匹配。Gen 3 下 `name` 标签变为 `hbase`
    （handler 的 ProductName），反亲和**开始真正生效** —— 单节点 kind 集群上多副本角色可能因此变得
    分散不下去，e2e 若出现 Pending 需优先怀疑此处。
-3. **`HBASE_<role>_OPTS` 变量名含小写角色名**（如 `HBASE_master_OPTS`），HBase 实际读取的是大写形式
-   （`HBASE_MASTER_OPTS`），故该变量一直未生效，Kerberos 的 krb5.conf 系统属性实际靠容器 env 里的
-   `HBASE_OPTS` 兜底。按平价原样保留。
 
 ## operator-go 框架反馈（已由 framework-steward 独立核实）
 

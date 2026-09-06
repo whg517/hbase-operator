@@ -1,11 +1,13 @@
 # operator-go issue 草稿（hbase Gen 3 迁移产出）
 
+<!-- markdownlint-disable MD024 -->
+
 > **待观察（尚未成稿）**：apply 路径把**可重试的写冲突**当成硬错误上报 —— 每次都在 CR 上留下
 > ERROR 日志和 `ReconcileError` Warning 事件，且置 Degraded。一轮 e2e 里观察到两种形态，
 > 两者都在下一次 reconcile 自愈、e2e 用例全部通过：
 >
 > 1. 集群删除时，已被 GC 回收的 Service 触发 UID precondition 失效：
->    `Precondition failed: UID in precondition: ab5e2e42-..., UID in object meta: ` ——
+>    `Precondition failed: UID in precondition: ab5e2e42-..., UID in object meta: <empty>` ——
 >    即一次**正常的删除**会报错。
 > 2. StatefulSet 的标准 409：`Operation cannot be fulfilled on statefulsets.apps ...
 >    the object has been modified` —— StatefulSet controller 写 status 与 operator 写 spec 撞车，
@@ -18,11 +20,13 @@
 > 复现环境：operator-go `e8a9495`，k8s 1.35.0。提 issue 前应确认框架是否有意如此
 > （apply 失败即 Degraded），以及是否已有 issue 覆盖。
 
-三条均已由 framework-steward 对照本地 operator-go 源码核实。**均未阻塞本次迁移**（都有下游
-workaround），因此按"发现即记录"提交，而非阻塞式 PR。提交前请确认是否已有重复 issue。
+三条均已由 framework-steward 对照本地 operator-go 源码核实。第 2 条已在 operator-go v0.13.0
+以 `RoleGroupResolver` 修复，保留原始草稿作为迁移过程记录；第 1、3 条仍可作为上游 issue 候选。
+**均未阻塞本次迁移**。提交前请确认是否已有重复 issue。
 
 ---
 
+<!-- markdownlint-disable-next-line MD013 -->
 ## 1. `pkg/builder`: promote the default pod-affinity builder that four operators ship verbatim
 
 **Labels**: `enhancement`, `pkg/builder`
@@ -90,7 +94,7 @@ CHANGELOG 显式说明 —— 否则 `affinity` 字段的序列化会有差异�
 
 ---
 
-## 2. `ProductConfig` 的文档承诺了签名做不到的事（ZooKeeper connection string）
+## 2. [已解决于 v0.13.0] `ProductConfig` 的文档承诺了签名做不到的事（ZooKeeper connection string）
 
 **Labels**: `documentation`, `pkg/reconciler`
 **Priority**: HIGH（docs）/ MEDIUM（API）
