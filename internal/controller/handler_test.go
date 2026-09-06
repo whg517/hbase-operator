@@ -22,11 +22,14 @@ import (
 )
 
 const (
-	testCluster   = "hbase"
-	testNamespace = "default"
-	testGroup     = "default"
-	testZnodeCM   = "hbase-znode"
-	testHdfsCM    = "hdfs"
+	testCluster         = "hbase"
+	testNamespace       = "default"
+	testGroup           = "default"
+	testZnodeCM         = "hbase-znode"
+	testHdfsCM          = "hdfs"
+	testOIDCAuthClass   = "oidc"
+	testOIDCCredentials = "oidc-credentials"
+	testMasterResource  = "hbase-master-default"
 )
 
 func testScheme(t *testing.T) *runtime.Scheme {
@@ -436,15 +439,15 @@ func TestKerberosWiring(t *testing.T) {
 func TestOidcInjectsTheOauth2ProxySidecar(t *testing.T) {
 	cr := testCR(func(cr *hbasev1alpha1.HbaseCluster) {
 		cr.Spec.ClusterConfigSpec.Authentication = &hbasev1alpha1.AuthenticationSpec{
-			AuthenticationClass: "oidc",
+			AuthenticationClass: testOIDCAuthClass,
 			Oidc: &hbasev1alpha1.OidcSpec{
-				ClientCredentialsSecret: "oidc-credentials",
+				ClientCredentialsSecret: testOIDCCredentials,
 			},
 		}
 	})
 
 	authClass := &authv1alpha1.AuthenticationClass{
-		ObjectMeta: metav1.ObjectMeta{Name: "oidc"},
+		ObjectMeta: metav1.ObjectMeta{Name: testOIDCAuthClass},
 		Spec: authv1alpha1.AuthenticationClassSpec{
 			AuthenticationProvider: &authv1alpha1.AuthenticationProvider{
 				OIDC: &authv1alpha1.OIDCProvider{
@@ -488,7 +491,7 @@ func TestOidcInjectsTheOauth2ProxySidecar(t *testing.T) {
 		t.Errorf("cookie secret ref = %q, want %q", got, OidcCookieSecretName(testCluster))
 	}
 	// The user-facing credentials Secret keeps its documented two-key contract.
-	if got := env["OAUTH2_PROXY_CLIENT_ID"].ValueFrom.SecretKeyRef.Name; got != "oidc-credentials" {
+	if got := env["OAUTH2_PROXY_CLIENT_ID"].ValueFrom.SecretKeyRef.Name; got != testOIDCCredentials {
 		t.Errorf("client id secret = %q", got)
 	}
 }

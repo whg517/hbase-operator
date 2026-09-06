@@ -121,6 +121,10 @@ func (h *HbaseRoleGroupHandler) DeclareRoles(
 		probe := roleProbeHandler(role)
 
 		catalog[role] = reconciler.RoleDeclaration{
+			// All three typed role blocks are optional in the HbaseCluster API. Declaring a
+			// supported role that this cluster omits must therefore not emit a warning.
+			Optional: true,
+
 			// The primary container is named after the role, matching the per-container
 			// logging key below.
 			MainContainerName: role,
