@@ -301,7 +301,9 @@ func (h *HbaseRoleGroupHandler) buildMetricsService(
 		baseLabels,
 	).
 		WithPath(prometheusPath).
-		WithTargetPortName(metricsPortName).
+		// HBase exposes /prometheus on the role's UI port. Keep the Service port named
+		// "metrics" for discovery, but route it to the container's real ui-http port.
+		WithTargetPortName(uiPortName).
 		WithSelector(h.SelectorLabels(buildCtx)).
 		Build()
 }

@@ -73,8 +73,8 @@ wait_for_termination $!
 }
 
 // hbaseEnvSh renders hbase-env.sh: HBASE_MANAGES_ZK off (ZooKeeper is external) plus the
-// role-scoped JVM options (Kerberos krb5.conf when enabled). Byte-identical to the pre-Gen3
-// ConfigMapBuilder output, including the historical lowercase role in the variable name.
+// role-scoped JVM options (Kerberos krb5.conf when enabled). HBase's hbase-env.sh contract names
+// these variables HBASE_<ROLE>_OPTS with an uppercase role; a lowercase role is silently ignored.
 func hbaseEnvSh(roleName string, krb5Config *HbaseKerberosConfig) string {
 	var opts []string
 	if krb5Config != nil {
@@ -82,7 +82,11 @@ func hbaseEnvSh(roleName string, krb5Config *HbaseKerberosConfig) string {
 			opts = append(opts, "-D"+k+"="+v)
 		}
 	}
-	jvmOpts := fmt.Sprintf(`export HBASE_%s_OPTS="$HBASE_OPTS %s"`, roleName, strings.Join(opts, " "))
+	jvmOpts := fmt.Sprintf(
+		`export HBASE_%s_OPTS="$HBASE_OPTS %s"`,
+		strings.ToUpper(roleName),
+		strings.Join(opts, " "),
+	)
 
 	hbaseEnv := fmt.Sprintf(`
 export HBASE_MANAGES_ZK=false

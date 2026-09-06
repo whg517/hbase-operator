@@ -215,6 +215,25 @@ func TestConfigMapCarriesTheHbaseFileSet(t *testing.T) {
 	}
 }
 
+func TestHbaseEnvUsesTheRoleVariableHBaseReads(t *testing.T) {
+	for _, role := range []string{
+		hbasev1alpha1.MasterRole,
+		hbasev1alpha1.RegionServerRole,
+		hbasev1alpha1.RestServerRole,
+	} {
+		t.Run(role, func(t *testing.T) {
+			env := buildFor(t, testCR(), role).ConfigMap.Data[HbaseEnvFileName]
+			want := "HBASE_" + strings.ToUpper(role) + "_OPTS"
+			if !strings.Contains(env, want) {
+				t.Errorf("hbase-env.sh does not set %s; got:\n%s", want, env)
+			}
+			if wrong := "HBASE_" + role + "_OPTS"; wrong != want && strings.Contains(env, wrong) {
+				t.Errorf("hbase-env.sh still contains ignored lowercase variable %s; got:\n%s", wrong, env)
+			}
+		})
+	}
+}
+
 // A user's configOverrides must beat both the product config and the zookeeper-derived keys.
 func TestUserConfigOverridesWin(t *testing.T) {
 	cr := testCR(func(cr *hbasev1alpha1.HbaseCluster) {
@@ -310,7 +329,8 @@ func TestMetricsServiceMatchesTheObservabilityContract(t *testing.T) {
 
 	for role, wantPort := range wantPorts {
 		t.Run(role, func(t *testing.T) {
-			svc := buildFor(t, testCR(), role).MetricsService
+			resources := buildFor(t, testCR(), role)
+			svc := resources.MetricsService
 			if svc == nil {
 				t.Fatal("no metrics service built")
 			}
@@ -336,6 +356,19 @@ func TestMetricsServiceMatchesTheObservabilityContract(t *testing.T) {
 			}
 			if len(svc.Spec.Ports) != 1 || svc.Spec.Ports[0].Port != wantPort {
 				t.Errorf("metrics port = %v, want %d", svc.Spec.Ports, wantPort)
+			}
+			if got := svc.Spec.Ports[0].TargetPort.String(); got != uiPortName {
+				t.Errorf("metrics targetPort = %q, want the HBase UI port %q", got, uiPortName)
+			}
+			container := mainContainer(t, resources.StatefulSet, role)
+			foundTarget := false
+			for _, port := range container.Ports {
+				if port.Name == uiPortName && port.ContainerPort == wantPort {
+					foundTarget = true
+				}
+			}
+			if !foundTarget {
+				t.Errorf("container has no %s port at %d; ports: %v", uiPortName, wantPort, container.Ports)
 			}
 			// The selector must match the pods of exactly this role group.
 			for _, key := range []string{"app.kubernetes.io/instance", "app.kubernetes.io/component"} {
