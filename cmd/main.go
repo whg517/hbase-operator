@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -245,7 +246,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := hbaseReconciler.SetupWithManager(mgr); err != nil {
+	if err := controller.SetupReferenceIndexes(context.Background(), mgr.GetFieldIndexer()); err != nil {
+		setupLog.Error(err, "unable to index HbaseCluster external references")
+		os.Exit(1)
+	}
+
+	if err := hbaseReconciler.SetupWithManagerOpts(mgr, reconciler.SetupWithManagerOptions{
+		Watches: controller.ReferenceWatches(mgr.GetClient()),
+	}); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "HbaseCluster")
 		os.Exit(1)
 	}
