@@ -11,7 +11,7 @@ intentional-diff 清单。
 <!-- markdownlint-disable MD013 -->
 
 | 迁移前（Gen 2b） | 迁移后（Gen 3） |
-|---|---|
+| --- | --- |
 | `internal/controller/hbasecluster_controller.go` + `cluster/` | `reconciler.GenericReconciler`（框架） |
 | `master/`、`regionserver/`、`restserver/` 每角色包 | CR `GetSpec()` 桥接出的 `Roles` map + 单一 `HbaseRoleGroupHandler` |
 | `common/statefulset.go`（手建 STS） | 框架构建，产品只**声明**：`DeclareRoles` 返回的 `RoleDeclaration`（入口脚本进 `Command`、探针、端口、主容器名、`ConfigDefaults` 里的默认亲和）+ `buildCtx.VolumeProviders`（HDFS 配置卷、Kerberos CSI 卷）。全部在框架 `Build()` **之前**生效，故用户 podOverrides 仍最高优先 |
