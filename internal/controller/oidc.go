@@ -8,6 +8,7 @@ import (
 	"github.com/zncdatadev/operator-go/pkg/reconciler"
 	"github.com/zncdatadev/operator-go/pkg/sidecar"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -84,6 +85,21 @@ func registerOidcSidecar(
 		}),
 	)
 
-	buildCtx.SidecarManager.Register(provider, &sidecar.SidecarConfig{Enabled: true})
+	// Keep the framework's limits, but state smaller requests explicitly. Kubernetes otherwise
+	// defaults an omitted request to the limit, so the three HBase roles reserve 1800m CPU just
+	// for oauth2-proxy and the final role cannot be scheduled on a small single-node cluster.
+	buildCtx.SidecarManager.Register(provider, &sidecar.SidecarConfig{
+		Enabled: true,
+		Resources: &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("600m"),
+				corev1.ResourceMemory: resource.MustParse("512Mi"),
+			},
+		},
+	})
 	return nil
 }

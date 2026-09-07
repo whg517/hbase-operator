@@ -494,6 +494,18 @@ func TestOidcInjectsTheOauth2ProxySidecar(t *testing.T) {
 	if got := env["OAUTH2_PROXY_CLIENT_ID"].ValueFrom.SecretKeyRef.Name; got != testOIDCCredentials {
 		t.Errorf("client id secret = %q", got)
 	}
+	if got := proxy.Resources.Requests.Cpu().String(); got != "100m" {
+		t.Errorf("proxy CPU request = %q, want 100m", got)
+	}
+	if got := proxy.Resources.Requests.Memory().String(); got != "128Mi" {
+		t.Errorf("proxy memory request = %q, want 128Mi", got)
+	}
+	if got := proxy.Resources.Limits.Cpu().String(); got != "600m" {
+		t.Errorf("proxy CPU limit = %q, want 600m", got)
+	}
+	if got := proxy.Resources.Limits.Memory().String(); got != "512Mi" {
+		t.Errorf("proxy memory limit = %q, want 512Mi", got)
+	}
 }
 
 // A cluster without OIDC must not gain a proxy.
