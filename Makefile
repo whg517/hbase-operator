@@ -283,7 +283,7 @@ helm-chart-package: ## Package helm chart for the operator.
 	rm -rf target/charts/*.tgz
 	"$(HELM)" package deploy/helm/$(PROJECT_NAME) --version $(VERSION) --app-version $(VERSION) --destination target/charts
 
-n.PHONY: chart-e2e
+.PHONY: chart-e2e
 chart-e2e: setup-chainsaw-cluster chainsaw docker-build helm-chart-package ## Run chart e2e tests (deploy via Helm, then run chainsaw)
 	"$(KIND)" --name $(CHAINSAW_CLUSTER) load docker-image "$(IMG)"
 	@echo "Installing hbase-operator chart..."
