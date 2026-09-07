@@ -204,8 +204,7 @@ spec:
               exit 1
             fi
 
-            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
-            helm repo update
+            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
 
             echo "=== Installing Prometheus ==="
             echo "Will install to namespace: $NAMESPACE"
